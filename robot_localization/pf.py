@@ -145,13 +145,13 @@ class ParticleFilter(Node):
             return
         
         (r, theta) = self.transform_helper.convert_scan_to_polar_in_robot_frame(msg, self.base_frame)
-        print("r[0]={0}, theta[0]={1}".format(r[0], theta[0]))
+        #print("r[0]={0}, theta[0]={1}".format(r[0], theta[0]))
         # clear the current scan so that we can process the next one
         self.scan_to_process = None
 
         self.odom_pose = new_pose
         new_odom_xy_theta = self.transform_helper.convert_pose_to_xy_and_theta(self.odom_pose)
-        print("x: {0}, y: {1}, yaw: {2}".format(*new_odom_xy_theta))
+        #print("x: {0}, y: {1}, yaw: {2}".format(*new_odom_xy_theta))
 
         if not self.current_odom_xy_theta:
             self.current_odom_xy_theta = new_odom_xy_theta
@@ -238,11 +238,26 @@ class ParticleFilter(Node):
         """ Initialize the particle cloud.
             Arguments
             xy_theta: a triple consisting of the mean x, y, and theta (yaw) to initialize the
-                      particle cloud around.  If this input is omitted, the odometry will be used """
+                      particle cloud around.  If this input is omitted, the odometry will be used """  
         if xy_theta is None:
             xy_theta = self.transform_helper.convert_pose_to_xy_and_theta(self.odom_pose)
+        initial_x = xy_theta[0]
+        initial_y = xy_theta[1]
+        initial_theta = xy_theta[2] 
+        print(f"Initial x: {initial_x}. Initial y: {initial_y}. Initial theta: {initial_theta}")
         self.particle_cloud = []
-        # TODO create particles
+        size_per_axis = math.floor(self.n_particles ** (1/3)) #distribute particles in 3 axes (x y theta) around initial estimate
+        print(size_per_axis)
+        initial_linear_range = 0.5 #distance to distribute those initial particles across, m, total (not this in either dir)
+        initial_theta_range = 3.14159 / 2 #angle to distribute initial particles across, rad, total (not this in either dir)
+        for i in range(size_per_axis):
+            for j in range(size_per_axis):
+                for k in range(size_per_axis):
+                    x_val = -1/2 * initial_linear_range + initial_linear_range / size_per_axis * (i+0.5) + initial_x
+                    y_val = -1/2 * initial_linear_range + initial_linear_range / size_per_axis * (j+0.5) + initial_y
+                    z_val = -1/2 * initial_theta_range + initial_theta_range / size_per_axis * (k+0.5) + initial_theta
+                    self.particle_cloud.append(Particle(x_val,y_val,z_val,1/self.n_particles))
+        # should we replace the initialization with a gaussian? probably
 
         self.normalize_particles()
 
