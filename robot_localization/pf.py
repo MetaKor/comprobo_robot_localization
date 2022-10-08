@@ -49,6 +49,7 @@ class Particle(object):
         """
         Translate the particle forwards along its current heading
 
+        args:
         distance: float, m, how far to translate
         """
         self.x += distance * math.cos(self.theta)
@@ -58,9 +59,26 @@ class Particle(object):
         """
         Turn the particle
 
+        args:
         angle: float, rad, how far to rotate (pos forr ccw like standard)
         """
         self.theta += angle
+    
+    def point_at_distance(self, distance):
+        """
+        Returns the point distance away along the direction of the particle
+
+        args:
+        distance: float, m, how far ahead to go to get the point
+
+        returns:
+        point: tuple (float, float), (m, m): (x,y) the coordinates of the point
+        """
+
+        x_coord = self.x + distance * math.cos(self.theta)
+        y_coord = self.y + distance * math.sin(self.theta)
+        point = (x_coord, y_coord)
+        return point
     
 
 
@@ -274,8 +292,16 @@ class ParticleFilter(Node):
             r: the distance readings to obstacles
             theta: the angle relative to the robot frame for each corresponding reading 
         """
-        # TODO: implement this
-        pass
+
+        ahead_dist = r[0]
+
+        for particle in self.particle_cloud:
+            (dead_ahead_scan_point) = particle.point_at_distance(ahead_dist)
+            proj_x = dead_ahead_scan_point[0]
+            proj_y = dead_ahead_scan_point[1]
+            min_dist_from_dead_ahead_point = OccupancyField.get_closest_obstacle_distance(self.occupancy_field, proj_x, proj_y)
+            error = min_dist_from_dead_ahead_point
+            particle.w = 1 / (error + 0.01)
 
     def update_initial_pose(self, msg):
         """ Callback function to handle re-initializing the particle filter based on a pose estimate.
