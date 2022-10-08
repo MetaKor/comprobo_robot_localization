@@ -45,6 +45,24 @@ class Particle(object):
                     orientation=Quaternion(x=q[0], y=q[1], z=q[2], w=q[3]))
 
     # TODO: define additional helper functions if needed
+    def drive(self, distance):
+        """
+        Translate the particle forwards along its current heading
+
+        distance: float, m, how far to translate
+        """
+        self.x += distance * math.cos(self.theta)
+        self.y += distance * math.sin(self.theta)
+    
+    def turn(self, angle):
+        """
+        Turn the particle
+
+        angle: float, rad, how far to rotate (pos forr ccw like standard)
+        """
+        self.theta += angle
+    
+
 
 class ParticleFilter(Node):
     """ The class that represents a Particle Filter ROS Node
@@ -74,7 +92,7 @@ class ParticleFilter(Node):
         self.odom_frame = "odom"        # the name of the odometry coordinate frame
         self.scan_topic = "scan"        # the topic where we will get laser scans from 
 
-        self.n_particles = 300          # the number of particles to use
+        self.n_particles = 216          # the number of particles to use
 
         self.d_thresh = 0.2             # the amount of linear movement before performing an update
         self.a_thresh = math.pi/6       # the amount of angular movement before performing an update
@@ -202,6 +220,10 @@ class ParticleFilter(Node):
 
         self.robot_pose = Pose()
 
+        self.robot_pose.position.x = guessed_x
+        self.robot_pose.position.y = guessed_y
+        self.robot_pose.orientation.z = guessed_theta
+
         self.transform_helper.fix_map_to_odom_transform(self.robot_pose,
                                                         self.odom_pose)
 
@@ -224,12 +246,18 @@ class ParticleFilter(Node):
             self.current_odom_xy_theta = new_odom_xy_theta
             return
 
-        x_trans_particle_frame = delta[0] * math.cos(self.current_odom_xy_theta[2]) + delta[1] * math.sin(self.current_odom_xy_theta[2])
-        y_trans_particle_frame = delta[0] * math.cos(self.current_odom_xy_theta[2]) + delta[1] * math.sin(self.current_odom_xy_theta[2])
+        #x_trans_particle_frame = delta[0] * math.cos(self.current_odom_xy_theta[2]) + delta[1] * math.sin(self.current_odom_xy_theta[2])
+        #y_trans_particle_frame = delta[0] * math.cos(self.current_odom_xy_theta[2]) + delta[1] * math.sin(self.current_odom_xy_theta[2])
+
+        distance = math.sqrt(delta[0] ** 2 + delta[1] ** 2)
+        phi = math.atan2(delta[1], delta[0])
+        psi = delta[2] - phi
 
         for particle in self.particle_cloud:
-            new_angle = delta[2] + particle.theta
-            dist_traveled = math.sqrt(delta[0] ** 2 + delta[1] ** 2)
+            particle.turn(phi)
+            particle.drive(distance)
+            particle.turn(psi)
+            
 
     def resample_particles(self):
         """ Resample the particles according to the new particle weights.
@@ -308,7 +336,6 @@ class ParticleFilter(Node):
 
 
     def scan_received(self, msg):
-        print("scan received")
         self.last_scan_timestamp = msg.header.stamp
         # we throw away scans until we are done processing the previous scan
         # self.scan_to_process is set to None in the run_loop 
