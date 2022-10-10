@@ -284,13 +284,17 @@ class ParticleFilter(Node):
         #y_trans_particle_frame = delta[0] * math.cos(self.current_odom_xy_theta[2]) + delta[1] * math.sin(self.current_odom_xy_theta[2])
 
         distance = math.sqrt(delta[0] ** 2 + delta[1] ** 2)
-        phi = math.atan2(delta[1], delta[0])
+        phi = math.atan2(delta[1], delta[0]) - self.current_odom_xy_theta[2]
         psi = delta[2] - phi
 
         for particle in self.particle_cloud:
+            #print(f"old x: {particle.x} old y: {particle.y} old theta: {particle.theta}")
+            #print(f"phi: {phi} dist: {distance} psi: {psi}")
+            #print(f"delta: {delta}")
             particle.turn(phi)
             particle.drive(distance)
             particle.turn(psi)
+            #print(f"new x: {particle.x} new y: {particle.y} new theta: {particle.theta}")
             
 
     def resample_particles(self):
