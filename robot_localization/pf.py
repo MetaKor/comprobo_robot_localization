@@ -110,7 +110,7 @@ class ParticleFilter(Node):
         self.odom_frame = "odom"        # the name of the odometry coordinate frame
         self.scan_topic = "scan"        # the topic where we will get laser scans from 
 
-        self.n_particles = 216          # the number of particles to use
+        self.n_particles = 1          # the number of particles to use
 
         self.d_thresh = 0.2             # the amount of linear movement before performing an update
         self.a_thresh = math.pi/6       # the amount of angular movement before performing an update
@@ -221,9 +221,6 @@ class ParticleFilter(Node):
         # first make sure that the particle weights are normalized
         self.normalize_particles()
 
-        # TODO: assign the latest pose into self.robot_pose as a geometry_msgs.Pose object
-        # just to get started we will fix the robot's pose to always be at the origin
-
         #starting with the mean pose because that's easiest
         guessed_x = 0
         guessed_y = 0
@@ -241,6 +238,25 @@ class ParticleFilter(Node):
         self.robot_pose.position.x = guessed_x
         self.robot_pose.position.y = guessed_y
         self.robot_pose.orientation.z = guessed_theta
+
+        # NOTE FROM HAN: not sure this is assigning where I think I'm assigning it.
+        # guessed_x and guessed_y can be small (-0.5 and -1.8) but the robot model ends 
+        # up way out of the gauntlet. It might be something to do with the frames the
+        # transform is based off? If odom is moving or something? I think it shouls all
+        # be based off the map so this shouldn't happen but not sure.
+
+        # having the neato spin in a circle in place casuses the guessed position to jump
+        # in a cycle, it's in place when theta=0 and most off when theta=pi
+        # i'm guessing this means the issue is with frames, maybe i'm interpreting the
+        # frames wrong and using the wrong ones? the below lines are provided though so that
+        # should probably be right
+
+        # jumps very little when at 0,0 in global, a lot when far from 0, 0
+
+        # when initial pose going right, driving forwards results in arrow going up (trig error?)
+
+        # when pointing up, driving forward results in arrow going down (but still pointing forward)
+        # after starting pointing right, driving forward, then back, then turning ccw until pointing up
 
         self.transform_helper.fix_map_to_odom_transform(self.robot_pose,
                                                         self.odom_pose)
