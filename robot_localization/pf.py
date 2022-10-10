@@ -112,7 +112,7 @@ class ParticleFilter(Node):
 
         self.n_particles = 1          # the number of particles to use
 
-        self.d_thresh = 0.2             # the amount of linear movement before performing an update
+        self.d_thresh = 0.1             # the amount of linear movement before performing an update
         self.a_thresh = math.pi/6       # the amount of angular movement before performing an update
 
         # TODO: define additional constants if needed
@@ -190,10 +190,8 @@ class ParticleFilter(Node):
         #print("x: {0}, y: {1}, yaw: {2}".format(*new_odom_xy_theta))
 
         if not self.current_odom_xy_theta:
-            print("a")
             self.current_odom_xy_theta = new_odom_xy_theta
         elif not self.particle_cloud:
-            print("b")
             # now that we have all of the necessary transforms we can update the particle cloud
             self.initialize_particle_cloud(msg.header.stamp)
         elif self.moved_far_enough_to_update(new_odom_xy_theta):
@@ -239,6 +237,12 @@ class ParticleFilter(Node):
         self.robot_pose.position.y = guessed_y
         self.robot_pose.orientation.z = guessed_theta
 
+        # the guessed x, y and theta match the particle cloud just fine (map frame x, y theta not odom). 
+        # Based on the fix map to odom helper it seems to want map frame for this. However the robot
+        # model isn't placed at these coords in the map frame, it seems (but I'm not sure) that it's placed
+        # at these coords in the odom frame and I'm not sure why. Some previous thoughts/why I think this
+        # are below: 
+
         # NOTE FROM HAN: not sure this is assigning where I think I'm assigning it.
         # guessed_x and guessed_y can be small (-0.5 and -1.8) but the robot model ends 
         # up way out of the gauntlet. It might be something to do with the frames the
@@ -255,8 +259,6 @@ class ParticleFilter(Node):
 
         # when initial pose going right, driving forwards results in arrow going up (trig error?)
 
-        # when pointing up, driving forward results in arrow going down (but still pointing forward)
-        # after starting pointing right, driving forward, then back, then turning ccw until pointing up
 
         self.transform_helper.fix_map_to_odom_transform(self.robot_pose,
                                                         self.odom_pose)
@@ -288,6 +290,7 @@ class ParticleFilter(Node):
         psi = delta[2] - phi
 
         for particle in self.particle_cloud:
+            # noise goes in here?
             #print(f"old x: {particle.x} old y: {particle.y} old theta: {particle.theta}")
             #print(f"phi: {phi} dist: {distance} psi: {psi}")
             #print(f"delta: {delta}")
