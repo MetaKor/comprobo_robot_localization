@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
-""" This is the starter code for the robot localization project """
+""" CompRobo Particle Filter
+    Authors: Luke Raus & Han Vakil
+    Fall 2022
+"""
 
 import rclpy
 from threading import Thread
@@ -10,13 +13,13 @@ from std_msgs.msg import Header
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseArray, Pose, Point, Quaternion
 from rclpy.duration import Duration
-import math
-import time
-import numpy as np
 from occupancy_field import OccupancyField
 from helper_functions import TFHelper
 from rclpy.qos import qos_profile_sensor_data
 from angle_helpers import quaternion_from_euler
+import math
+import time
+import numpy as np
 
 class Particle(object):
     """ Represents a hypothesis (particle) of the robot's pose consisting of x,y and theta (yaw)
@@ -105,15 +108,18 @@ class ParticleFilter(Node):
     """
     def __init__(self):
         super().__init__('pf')
-        self.base_frame = "base_footprint"   # the frame of the robot base
-        self.map_frame = "map"          # the name of the map coordinate frame
-        self.odom_frame = "odom"        # the name of the odometry coordinate frame
-        self.scan_topic = "scan"        # the topic where we will get laser scans from 
+        self.base_frame = "base_footprint"   # name of the robot base frame
+        self.map_frame = "map"               # name of the map coordinate frame
+        self.odom_frame = "odom"             # name of the odometry coordinate frame
+        self.scan_topic = "scan"             # topic where we will get laser scans from 
 
-        self.n_particles = 1          # the number of particles to use
+        self.n_particles = 10           # the number of particles to use
 
-        self.d_thresh = 0.1             # the amount of linear movement before performing an update
-        self.a_thresh = math.pi/6       # the amount of angular movement before performing an update
+        self.d_thresh = 0.1             # [m] amount of linear movement before performing an update
+        self.a_thresh = math.pi/6       # [rad] amount of angular movement before performing an update
+
+        self.init_xy_dev = 0.2          # [m] standard deviation of x & y position of particles in initial cloud
+        self.init_theta_dev = 0.3       # [rad] standard deviation of orientation of particles in initial cloud
 
         # TODO: define additional constants if needed
 
@@ -198,9 +204,13 @@ class ParticleFilter(Node):
             print(f"new_odom_xy_theta:")
             # we have moved far enough to do an update!
             self.update_particles_with_odom()    # update based on odometry
+            for particle in self.particle_cloud:
+                print(f"x: {particle.x}   y: {particle.y}   theta: {particle.theta}")
+            """
             self.update_particles_with_laser(r, theta)   # update based on laser scan
             self.update_robot_pose()                # update robot's pose based on particles
             self.resample_particles()               # resample particles to focus on areas of high density
+            """
         # publish particles (so things like rviz can see them)
         self.publish_particles(msg.header.stamp)
 
@@ -333,7 +343,7 @@ class ParticleFilter(Node):
         xy_theta = self.transform_helper.convert_pose_to_xy_and_theta(msg.pose.pose)
         self.initialize_particle_cloud(msg.header.stamp, xy_theta)
 
-    def initialize_particle_cloud(self, timestamp, xy_theta=None):
+    def initialize_particle_cloud_uniform(self, timestamp, xy_theta=None):
         """ Initialize the particle cloud.
             Arguments
             xy_theta: a triple consisting of the mean x, y, and theta (yaw) to initialize the
@@ -358,6 +368,29 @@ class ParticleFilter(Node):
                     self.particle_cloud.append(Particle(x_val,y_val,z_val,1/self.n_particles))
         # should we replace the initialization with a gaussian? probably
 
+        self.normalize_particles()
+
+    def initialize_particle_cloud(self, timestamp, xy_theta=None):
+        """ Initialize the particle cloud by sampling from a normal distribution.
+            Arguments
+            xy_theta: a triple consisting of the mean x, y, and theta (yaw) to initialize the
+                      particle cloud around.  If this input is omitted, the odometry will be used """  
+        if xy_theta is None:
+            xy_theta = self.transform_helper.convert_pose_to_xy_and_theta(self.odom_pose)
+        initial_x = xy_theta[0]
+        initial_y = xy_theta[1]
+        initial_theta = xy_theta[2] 
+        print(f"Initial x: {initial_x}. Initial y: {initial_y}. Initial theta: {initial_theta}")
+        self.particle_cloud = []
+
+        # TODO: Draw (1 x n_particles) np arrays with sample values from normal distribution; 1 for x, y, theta
+        for i in range(self.n_particles):
+            x     = initial_x + np.random.normal(scale=self.init_xy_dev, size=None)
+            y     = initial_y + np.random.normal(scale=self.init_xy_dev, size=None)
+            theta = initial_theta + np.random.normal(scale=self.init_theta_dev, size=None)
+            self.particle_cloud.append(Particle(x, y, theta, 1.0))
+
+        # Normalizing takes care of initial particle weights of 1
         self.normalize_particles()
 
     def normalize_particles(self):
