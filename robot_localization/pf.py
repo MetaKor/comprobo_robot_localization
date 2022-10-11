@@ -273,6 +273,7 @@ class ParticleFilter(Node):
         self.transform_helper.fix_map_to_odom_transform(self.robot_pose,
                                                         self.odom_pose)
 
+
     def update_particles_with_odom(self):
         """ Update the particles using the newly given odometry pose.
             The function computes the value delta which is a tuple (x,y,theta)
@@ -280,7 +281,8 @@ class ParticleFilter(Node):
             when the particles were last updated and the current odometry.
         """
         new_odom_xy_theta = self.transform_helper.convert_pose_to_xy_and_theta(self.odom_pose)
-        # compute the change in x,y,theta since our last update
+        
+        # Compute the change in x,y,theta since our last update
         if self.current_odom_xy_theta:
             old_odom_xy_theta = self.current_odom_xy_theta
             delta = (new_odom_xy_theta[0] - self.current_odom_xy_theta[0],
@@ -292,21 +294,38 @@ class ParticleFilter(Node):
             self.current_odom_xy_theta = new_odom_xy_theta
             return
 
-        #x_trans_particle_frame = delta[0] * math.cos(self.current_odom_xy_theta[2]) + delta[1] * math.sin(self.current_odom_xy_theta[2])
-        #y_trans_particle_frame = delta[0] * math.cos(self.current_odom_xy_theta[2]) + delta[1] * math.sin(self.current_odom_xy_theta[2])
+        # For motion model, see Thrun et al, pg 133-139
+        # Each motion update consists of an initial pure turn of (ang1) [rads],
+        #    a straight-ahead drive of length (dist) [m],
+        #    and finally another pure turn of (ang2) [rads] 
+        ang1 = math.atan2(delta[1], delta[0]) - self.current_odom_xy_theta[2]
+        dist = math.sqrt(delta[0] ** 2 + delta[1] ** 2)
+        ang2 = delta[2] - ang1
 
-        distance = math.sqrt(delta[0] ** 2 + delta[1] ** 2)
-        phi = math.atan2(delta[1], delta[0]) - self.current_odom_xy_theta[2]
-        psi = delta[2] - phi
+        # Noise parameters & use below comes from Thrun et al, pg 136
+        # They are robot-specific and specify noise in motor model...
+        #    However, Thrun doesn't develop much intuition for what each means
+        #    but you can get a good sense by loooking at units
+        #    I have set them all to (empirically) reasonable values
+        a1 = 0.2      # [noise_rad/rad]
+        a2 = 0.3      # [noise_rad/m]
+        a3 = 0.05     # [noise_m/m]
+        a4 = 0.00001  # [noise_m/rad]
 
         for particle in self.particle_cloud:
-            # noise goes in here?
             #print(f"old x: {particle.x} old y: {particle.y} old theta: {particle.theta}")
-            #print(f"phi: {phi} dist: {distance} psi: {psi}")
+            
+            # Noisy update equations from Thrun et al, pg 136
+            ang1_noisy  = ang1 + np.random.normal( scale=( a1*abs(ang1) + a2*dist ) )
+            dist_noisy  = dist + np.random.normal( scale=( a3*dist + a4*(abs(ang1)+abs(ang2)) ) )
+            ang2_noisy  = ang2 + np.random.normal( scale=( a1*abs(ang2) + a2*dist ) )
+            
+            print(f"ang1: {ang1} dist: {dist} ang2: {ang2}")
+            print(f"ang1_noisy: {ang1_noisy} dist_noisy: {dist_noisy} ang2_noisy: {ang2_noisy}")
             #print(f"delta: {delta}")
-            particle.turn(phi)
-            particle.drive(distance)
-            particle.turn(psi)
+            particle.turn(ang1_noisy)
+            particle.drive(dist_noisy)
+            particle.turn(ang2_noisy)
             #print(f"new x: {particle.x} new y: {particle.y} new theta: {particle.theta}")
             
 
