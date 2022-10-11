@@ -51,9 +51,8 @@ class Particle(object):
     def drive(self, distance):
         """
         Translate the particle forwards along its current heading
-
         args:
-        distance: float, m, how far to translate
+            distance: float, m, how far to translate
         """
         self.x += distance * math.cos(self.theta)
         self.y += distance * math.sin(self.theta)
@@ -61,25 +60,36 @@ class Particle(object):
     def turn(self, angle):
         """
         Turn the particle
-
         args:
-        angle: float, rad, how far to rotate (pos forr ccw like standard)
+            angle: float, rad, how far to rotate (pos forr ccw like standard)
         """
         self.theta += angle
     
     def point_at_distance(self, distance):
         """
         Returns the point distance away along the direction of the particle
-
         args:
-        distance: float, m, how far ahead to go to get the point
-
+            distance: float, m, how far ahead to go to get the point
         returns:
-        point: tuple (float, float), (m, m): (x,y) the coordinates of the point
+            point: tuple (float, float), (m, m): (x,y) the coordinates of the point
         """
-
         x_coord = self.x + distance * math.cos(self.theta)
         y_coord = self.y + distance * math.sin(self.theta)
+        point = (x_coord, y_coord)
+        return point
+
+    def point_at_dist_deg(self, distance, ang):
+        """
+        Returns the point distance away along the direction of the particle
+        args:
+            distance: float, m, how far ahead to go to get the point
+            ang: float, deg, at what angle (in robot frame) to get the point
+        returns:
+            point: tuple (float, float), (m, m): (x,y) the coordinates of the point
+        """
+        ang_global = self.theta + math.radians(ang)
+        x_coord = self.x + distance * math.cos(ang_global)
+        y_coord = self.y + distance * math.sin(ang_global)
         point = (x_coord, y_coord)
         return point
     
@@ -204,6 +214,7 @@ class ParticleFilter(Node):
             print(f"new_odom_xy_theta:")
             # we have moved far enough to do an update!
             self.update_particles_with_odom()    # update based on odometry
+            
             for particle in self.particle_cloud:
                 print(f"x: {particle.x}   y: {particle.y}   theta: {particle.theta}")
             """
@@ -344,16 +355,34 @@ class ParticleFilter(Node):
             r: the distance readings to obstacles
             theta: the angle relative to the robot frame for each corresponding reading 
         """
+        error_hit = 0.1          # [m] The maximum unpenalized distance error
 
-        ahead_dist = r[0]
+        scan_resolution = 20     # Process 1 scan out of this many scans
 
         for particle in self.particle_cloud:
-            (dead_ahead_scan_point) = particle.point_at_distance(ahead_dist)
-            proj_x = dead_ahead_scan_point[0]
-            proj_y = dead_ahead_scan_point[1]
-            min_dist_from_dead_ahead_point = OccupancyField.get_closest_obstacle_distance(self.occupancy_field, proj_x, proj_y)
-            error = min_dist_from_dead_ahead_point
-            particle.w = 1 / (error + 0.01)
+            particle_likelihood = 1.0;
+            
+            for num_scan in range(0, len(theta), scan_resolution):
+                # Get distance and angle from actual measured scan
+                scan_ang = theta[ int(num_scan) ]
+                scan_dist = r[ int(num_scan) ]
+
+                # Ignore any scans with a distance of NaN
+                if not math.isnan(scan_dist):
+                    # Project scan in particle frame and find dist to nearest obstacle
+                    (proj_x, proj_y) = particle.point_at_dist_deg(scan_dist, scan_ang)
+                    min_obstacle_dist = OccupancyField.get_closest_obstacle_distance(self.occupancy_field, proj_x, proj_y)
+                    error = min_obstacle_dist
+
+                    # Piecewise approximation for gaussian:
+                    #    If error less than error_hit, likelihood is 1
+                    #    If error larger than error_hit, error is proportional to 1/(error^3), but we
+                    #    must shift the function by (1-error_hit) so it's exactly 1 (and not larger) at error_hit
+                    scan_likelihood = (error <= error_hit) + (error > error_hit) * (error+(1.0-error_hit))**(-3) 
+                    particle_likelihood *= scan_likelihood
+
+            particle.w = particle_likelihood
+
 
     def update_initial_pose(self, msg):
         """ Callback function to handle re-initializing the particle filter based on a pose estimate.
