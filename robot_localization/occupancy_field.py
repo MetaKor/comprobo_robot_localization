@@ -105,5 +105,5 @@ class OccupancyField(object):
             distances[is_valid] = self.closest_occ[x_coord[is_valid], y_coord[is_valid]]
             return distances
         else:
-            #return self.closest_occ[x_coord, y_coord] if is_valid else float('nan')
-            return self.closest_occ[x_coord, y_coord] if is_valid else float(100)
+            return self.closest_occ[x_coord, y_coord] if is_valid else float('nan')
+            #return self.closest_occ[x_coord, y_coord] if is_valid else float(100)
