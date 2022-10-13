@@ -123,13 +123,13 @@ class ParticleFilter(Node):
         self.odom_frame = "odom"             # name of the odometry coordinate frame
         self.scan_topic = "scan"             # topic where we will get laser scans from 
 
-        self.n_particles = 10           # the number of particles to use
+        self.n_particles = 1           # the number of particles to use
 
         self.d_thresh = 0.1             # [m] amount of linear movement before performing an update
-        self.a_thresh = math.pi/6       # [rad] amount of angular movement before performing an update
+        self.a_thresh = math.pi/10      # [rad] amount of angular movement before performing an update
 
-        self.init_xy_dev = 0.2          # [m] standard deviation of x & y position of particles in initial cloud
-        self.init_theta_dev = 0.3       # [rad] standard deviation of orientation of particles in initial cloud
+        self.init_xy_dev = 0.01  # 0.2          # [m] standard deviation of x & y position of particles in initial cloud
+        self.init_theta_dev = 0.01  # 0.3     # [rad] standard deviation of orientation of particles in initial cloud
 
         # TODO: define additional constants if needed
 
@@ -213,12 +213,12 @@ class ParticleFilter(Node):
         elif self.moved_far_enough_to_update(new_odom_xy_theta):
             print(f"new_odom_xy_theta:")
             # we have moved far enough to do an update!
-            self.update_particles_with_odom()    # update based on odometry
-            
+            self.update_particles_with_odom()            # update particle location based on odometry
+            self.update_particles_with_laser(r, theta)   # update particle likelihood  based on laser scan
+
             for particle in self.particle_cloud:
-                print(f"x: {particle.x}   y: {particle.y}   theta: {particle.theta}")
+                print(f"x: {particle.x}   y: {particle.y}   theta: {particle.theta}   weight: {particle.w}")
             """
-            self.update_particles_with_laser(r, theta)   # update based on laser scan
             self.update_robot_pose()                # update robot's pose based on particles
             self.resample_particles()               # resample particles to focus on areas of high density
             """
@@ -306,21 +306,24 @@ class ParticleFilter(Node):
             return
 
         # For motion model, see Thrun et al, pg 133-139
-        # Each motion update consists of an initial pure turn of (ang1) [rads],
+        # Each motion update consists of:
+        #    an initial pure turn of (ang1) [rads],
         #    a straight-ahead drive of length (dist) [m],
         #    and finally another pure turn of (ang2) [rads] 
         ang1 = math.atan2(delta[1], delta[0]) - self.current_odom_xy_theta[2]
         dist = math.sqrt(delta[0] ** 2 + delta[1] ** 2)
         ang2 = delta[2] - ang1
 
+        # TODO Fix potential angle wrap issues after adding noise
+
         # Noise parameters & use below comes from Thrun et al, pg 136
         # They are robot-specific and specify noise in motor model...
         #    However, Thrun doesn't develop much intuition for what each means
         #    but you can get a good sense by loooking at units
         #    I have set them all to (empirically) reasonable values
-        a1 = 0.2      # [noise_rad/rad]
-        a2 = 0.3      # [noise_rad/m]
-        a3 = 0.05     # [noise_m/m]
+        a1 = 0.08     # [noise_rad/rad]
+        a2 = 0.1      # [noise_rad/m]
+        a3 = 0.08     # [noise_m/m]
         a4 = 0.00001  # [noise_m/rad]
 
         for particle in self.particle_cloud:
@@ -350,6 +353,7 @@ class ParticleFilter(Node):
         self.normalize_particles()
         # TODO: fill out the rest of the implementation
 
+
     def update_particles_with_laser(self, r, theta):
         """ Updates the particle weights in response to the scan data
             r: the distance readings to obstacles
@@ -361,27 +365,35 @@ class ParticleFilter(Node):
 
         for particle in self.particle_cloud:
             particle_likelihood = 1.0;
-            
+
             for num_scan in range(0, len(theta), scan_resolution):
                 # Get distance and angle from actual measured scan
                 scan_ang = theta[ int(num_scan) ]
                 scan_dist = r[ int(num_scan) ]
 
-                # Ignore any scans with a distance of NaN
-                if not math.isnan(scan_dist):
-                    # Project scan in particle frame and find dist to nearest obstacle
-                    (proj_x, proj_y) = particle.point_at_dist_deg(scan_dist, scan_ang)
-                    min_obstacle_dist = OccupancyField.get_closest_obstacle_distance(self.occupancy_field, proj_x, proj_y)
-                    error = min_obstacle_dist
+                # Project scan in particle frame and find dist to nearest obstacle
+                (proj_x, proj_y) = particle.point_at_dist_deg(scan_dist, scan_ang)
+                min_obstacle_dist = OccupancyField.get_closest_obstacle_distance(self.occupancy_field, proj_x, proj_y)
+                error = min_obstacle_dist
 
+                if math.isnan(error):
+                    # Penalize NaN readings with constant likelihood multiplier
+                    scan_likelihood = 0.05
+                else:
                     # Piecewise approximation for gaussian:
                     #    If error less than error_hit, likelihood is 1
                     #    If error larger than error_hit, error is proportional to 1/(error^3), but we
                     #    must shift the function by (1-error_hit) so it's exactly 1 (and not larger) at error_hit
-                    scan_likelihood = (error <= error_hit) + (error > error_hit) * (error+(1.0-error_hit))**(-3) 
-                    particle_likelihood *= scan_likelihood
+                    scan_likelihood = (error <= error_hit) + (error > error_hit) * ((error+(1.0-error_hit))**(-3))
+
+                print(f"scan angle: {scan_ang}    scan_dist: {scan_dist}   error: {error}   scan_like: {scan_likelihood}")
+
+
+                particle_likelihood *= scan_likelihood
 
             particle.w = particle_likelihood
+
+        #self.normalize_particles()
 
 
     def update_initial_pose(self, msg):
@@ -400,7 +412,7 @@ class ParticleFilter(Node):
             xy_theta = self.transform_helper.convert_pose_to_xy_and_theta(self.odom_pose)
         initial_x = xy_theta[0]
         initial_y = xy_theta[1]
-        initial_theta = xy_theta[2] 
+        initial_theta = xy_theta[2]
         print(f"Initial x: {initial_x}. Initial y: {initial_y}. Initial theta: {initial_theta}")
         self.particle_cloud = []
         size_per_axis = math.floor(self.n_particles ** (1/3)) #distribute particles in 3 axes (x y theta) around initial estimate
