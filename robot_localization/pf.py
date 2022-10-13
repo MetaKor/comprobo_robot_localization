@@ -14,7 +14,7 @@ from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseArray, Pose, Point, Quaternion
 from rclpy.duration import Duration
 from occupancy_field import OccupancyField
-from helper_functions import TFHelper
+from helper_functions import TFHelper, draw_random_sample
 from rclpy.qos import qos_profile_sensor_data
 from angle_helpers import quaternion_from_euler
 import math
@@ -123,7 +123,7 @@ class ParticleFilter(Node):
         self.odom_frame = "odom"             # name of the odometry coordinate frame
         self.scan_topic = "scan"             # topic where we will get laser scans from 
 
-        self.n_particles = 1           # the number of particles to use
+        self.n_particles = 20           # the number of particles to use
 
         self.d_thresh = 0.1             # [m] amount of linear movement before performing an update
         self.a_thresh = math.pi/10      # [rad] amount of angular movement before performing an update
@@ -211,17 +211,17 @@ class ParticleFilter(Node):
             # now that we have all of the necessary transforms we can update the particle cloud
             self.initialize_particle_cloud(msg.header.stamp)
         elif self.moved_far_enough_to_update(new_odom_xy_theta):
-            print(f"new_odom_xy_theta:")
+            
+            # print(f"new_odom_xy_theta:")
             # we have moved far enough to do an update!
             self.update_particles_with_odom()            # update particle location based on odometry
             self.update_particles_with_laser(r, theta)   # update particle likelihood  based on laser scan
-
-            for particle in self.particle_cloud:
-                print(f"x: {particle.x}   y: {particle.y}   theta: {particle.theta}   weight: {particle.w}")
-            """
             self.update_robot_pose()                # update robot's pose based on particles
             self.resample_particles()               # resample particles to focus on areas of high density
-            """
+            
+            #for particle in self.particle_cloud:
+            #    print(f"x: {particle.x}   y: {particle.y}   theta: {particle.theta}   weight: {particle.w}")
+
         # publish particles (so things like rviz can see them)
         self.publish_particles(msg.header.stamp)
 
@@ -249,6 +249,8 @@ class ParticleFilter(Node):
             guessed_x += particle.x * particle.w
             guessed_y += particle.y * particle.w
             guessed_theta += particle.theta * particle.w
+
+        guessed_theta = ( guessed_theta + np.pi ) % (2 * np.pi ) - np.pi
 
         print(f"guessed x: {guessed_x} guessed y: {guessed_y} guessed theta: {guessed_theta}")
 
@@ -295,10 +297,10 @@ class ParticleFilter(Node):
         
         # Compute the change in x,y,theta since our last update
         if self.current_odom_xy_theta:
-            old_odom_xy_theta = self.current_odom_xy_theta
             delta = (new_odom_xy_theta[0] - self.current_odom_xy_theta[0],
                      new_odom_xy_theta[1] - self.current_odom_xy_theta[1],
                      new_odom_xy_theta[2] - self.current_odom_xy_theta[2])
+            prev_odom_xy_theta = self.current_odom_xy_theta
 
             self.current_odom_xy_theta = new_odom_xy_theta
         else:
@@ -310,19 +312,17 @@ class ParticleFilter(Node):
         #    an initial pure turn of (ang1) [rads],
         #    a straight-ahead drive of length (dist) [m],
         #    and finally another pure turn of (ang2) [rads] 
-        ang1 = math.atan2(delta[1], delta[0]) - self.current_odom_xy_theta[2]
-        dist = math.sqrt(delta[0] ** 2 + delta[1] ** 2)
+        ang1 = math.atan2(delta[1], delta[0]) - prev_odom_xy_theta[2]
+        dist = math.sqrt( (delta[0] ** 2) + (delta[1] ** 2) )
         ang2 = delta[2] - ang1
-
-        # TODO Fix potential angle wrap issues after adding noise
 
         # Noise parameters & use below comes from Thrun et al, pg 136
         # They are robot-specific and specify noise in motor model...
         #    However, Thrun doesn't develop much intuition for what each means
         #    but you can get a good sense by loooking at units
         #    I have set them all to (empirically) reasonable values
-        a1 = 0.08     # [noise_rad/rad]
-        a2 = 0.1      # [noise_rad/m]
+        a1 = 0.04     # [noise_rad/rad]
+        a2 = 0.08     # [noise_rad/m]
         a3 = 0.08     # [noise_m/m]
         a4 = 0.00001  # [noise_m/rad]
 
@@ -334,14 +334,18 @@ class ParticleFilter(Node):
             dist_noisy  = dist + np.random.normal( scale=( a3*dist + a4*(abs(ang1)+abs(ang2)) ) )
             ang2_noisy  = ang2 + np.random.normal( scale=( a1*abs(ang2) + a2*dist ) )
             
-            print(f"ang1: {ang1} dist: {dist} ang2: {ang2}")
-            print(f"ang1_noisy: {ang1_noisy} dist_noisy: {dist_noisy} ang2_noisy: {ang2_noisy}")
+            # Ensure that noisy angles are between -pi & pi
+            ang1_noisy = ( ang1_noisy + np.pi) % (2 * np.pi ) - np.pi
+            ang2_noisy = ( ang2_noisy + np.pi) % (2 * np.pi ) - np.pi
+
+            #print(f"ang1: {ang1} dist: {dist} ang2: {ang2}")
+            #print(f"ang1_noisy: {ang1_noisy} dist_noisy: {dist_noisy} ang2_noisy: {ang2_noisy}")
             #print(f"delta: {delta}")
             particle.turn(ang1_noisy)
             particle.drive(dist_noisy)
             particle.turn(ang2_noisy)
             #print(f"new x: {particle.x} new y: {particle.y} new theta: {particle.theta}")
-            
+
 
     def resample_particles(self):
         """ Resample the particles according to the new particle weights.
@@ -351,7 +355,11 @@ class ParticleFilter(Node):
         """
         # make sure the distribution is normalized
         self.normalize_particles()
-        # TODO: fill out the rest of the implementation
+
+        weight_list = [p.w for p in self.particle_cloud]
+        resampled = draw_random_sample(self.particle_cloud, weight_list, len(weight_list))
+
+        self.particle_cloud = resampled
 
 
     def update_particles_with_laser(self, r, theta):
@@ -386,14 +394,13 @@ class ParticleFilter(Node):
                     #    must shift the function by (1-error_hit) so it's exactly 1 (and not larger) at error_hit
                     scan_likelihood = (error <= error_hit) + (error > error_hit) * ((error+(1.0-error_hit))**(-3))
 
-                print(f"scan angle: {scan_ang}    scan_dist: {scan_dist}   error: {error}   scan_like: {scan_likelihood}")
-
+                #print(f"scan angle: {scan_ang}    scan_dist: {scan_dist}   error: {error}   scan_like: {scan_likelihood}")
 
                 particle_likelihood *= scan_likelihood
 
             particle.w = particle_likelihood
 
-        #self.normalize_particles()
+        self.normalize_particles()
 
 
     def update_initial_pose(self, msg):
@@ -462,9 +469,8 @@ class ParticleFilter(Node):
         for particle in self.particle_cloud:
             particle.w = particle.w / total_particle_weight
             final_total_particle_weight += particle.w
-        print(f"Total particle weight initial: {total_particle_weight}")
-        print(f"Total particle weight final: {final_total_particle_weight}")
-
+        #print(f"Total particle weight initial: {total_particle_weight}")
+        #print(f"Total particle weight final: {final_total_particle_weight}")
 
 
     def publish_particles(self, timestamp):
@@ -483,6 +489,7 @@ class ParticleFilter(Node):
         # self.scan_to_process is set to None in the run_loop 
         if self.scan_to_process is None:
             self.scan_to_process = msg
+
 
 def main(args=None):
     rclpy.init()
