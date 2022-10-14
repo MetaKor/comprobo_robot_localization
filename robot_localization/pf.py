@@ -123,13 +123,13 @@ class ParticleFilter(Node):
         self.odom_frame = "odom"             # name of the odometry coordinate frame
         self.scan_topic = "scan"             # topic where we will get laser scans from 
 
-        self.n_particles = 20           # the number of particles to use
+        self.n_particles = 200          # the number of particles to use
 
         self.d_thresh = 0.1             # [m] amount of linear movement before performing an update
-        self.a_thresh = math.pi/10      # [rad] amount of angular movement before performing an update
+        self.a_thresh = math.pi/8      # [rad] amount of angular movement before performing an update
 
-        self.init_xy_dev = 0.01  # 0.2          # [m] standard deviation of x & y position of particles in initial cloud
-        self.init_theta_dev = 0.01  # 0.3     # [rad] standard deviation of orientation of particles in initial cloud
+        self.init_xy_dev = 0.2          # [m] standard deviation of x & y position of particles in initial cloud
+        self.init_theta_dev = 0.3     # [rad] standard deviation of orientation of particles in initial cloud
 
         # TODO: define additional constants if needed
 
@@ -216,8 +216,8 @@ class ParticleFilter(Node):
             # we have moved far enough to do an update!
             self.update_particles_with_odom()            # update particle location based on odometry
             self.update_particles_with_laser(r, theta)   # update particle likelihood  based on laser scan
-            self.update_robot_pose()                # update robot's pose based on particles
-            self.resample_particles()               # resample particles to focus on areas of high density
+            self.update_robot_pose()                     # update robot's pose based on particles
+            self.resample_particles()                    # resample particles to focus on areas of high density
             
             #for particle in self.particle_cloud:
             #    print(f"x: {particle.x}   y: {particle.y}   theta: {particle.theta}   weight: {particle.w}")
@@ -240,7 +240,7 @@ class ParticleFilter(Node):
         # first make sure that the particle weights are normalized
         self.normalize_particles()
 
-        #starting with the mean pose because that's easiest
+        # Take expected value of each pose parameter (x,y,theta) by scaling by weight & summing
         guessed_x = 0
         guessed_y = 0
         guessed_theta = 0
@@ -250,41 +250,19 @@ class ParticleFilter(Node):
             guessed_y += particle.y * particle.w
             guessed_theta += particle.theta * particle.w
 
+        # Ensure angle is within [-pi, pi]
         guessed_theta = ( guessed_theta + np.pi ) % (2 * np.pi ) - np.pi
 
         print(f"guessed x: {guessed_x} guessed y: {guessed_y} guessed theta: {guessed_theta}")
 
-        self.robot_pose = Pose()
+        # Get position tuple and orientation quaternion tuple from guessed x,y,theta
+        guessed_pos = (guessed_x, guessed_y, 0.0)
+        guessed_rot = quaternion_from_euler(0.0, 0.0, guessed_theta)
 
-        self.robot_pose.position.x = guessed_x
-        self.robot_pose.position.y = guessed_y
-        self.robot_pose.orientation.z = guessed_theta
+        # Create pose from position & orientation tuples
+        self.robot_pose = self.transform_helper.convert_translation_rotation_to_pose( guessed_pos, guessed_rot )
 
-        # the guessed x, y and theta match the particle cloud just fine (map frame x, y theta not odom). 
-        # Based on the fix map to odom helper it seems to want map frame for this. However the robot
-        # model isn't placed at these coords in the map frame, it seems (but I'm not sure) that it's placed
-        # at these coords in the odom frame and I'm not sure why. Some previous thoughts/why I think this
-        # are below: 
-
-        # NOTE FROM HAN: not sure this is assigning where I think I'm assigning it.
-        # guessed_x and guessed_y can be small (-0.5 and -1.8) but the robot model ends 
-        # up way out of the gauntlet. It might be something to do with the frames the
-        # transform is based off? If odom is moving or something? I think it shouls all
-        # be based off the map so this shouldn't happen but not sure.
-
-        # having the neato spin in a circle in place casuses the guessed position to jump
-        # in a cycle, it's in place when theta=0 and most off when theta=pi
-        # i'm guessing this means the issue is with frames, maybe i'm interpreting the
-        # frames wrong and using the wrong ones? the below lines are provided though so that
-        # should probably be right
-
-        # jumps very little when at 0,0 in global, a lot when far from 0, 0
-
-        # when initial pose going right, driving forwards results in arrow going up (trig error?)
-
-
-        self.transform_helper.fix_map_to_odom_transform(self.robot_pose,
-                                                        self.odom_pose)
+        self.transform_helper.fix_map_to_odom_transform(self.robot_pose, self.odom_pose)
 
 
     def update_particles_with_odom(self):
