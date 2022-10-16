@@ -21,20 +21,15 @@ def stamped_transform_to_pose(t):
     return Pose(position=Point(x=t.translation.x, y=t.translation.y, z=t.translation.z),
                 orientation=Quaternion(x=t.rotation.x, y=t.rotation.y, z=t.rotation.z, w=t.rotation.w))
 
-def draw_random_sample(choices, probabilities, n):
-    """ Return a random sample of n elements from the set choices with the specified probabilities
-            choices: the values to sample from represented as a list
-            probabilities: the probability of selecting each element in choices represented as a list
-            n: the number of samples
+def draw_integer_sample(probs, n):
+    """ Return a random sample of n integers from range(n) with assocaited probabilities
+            probs: 1xn np array, the probability of selecting each integer
+            n: integer representing the integer choices
     """
-    values = np.array(range(len(choices)))
-    probs = np.array(probabilities)
+    values = np.array(range(n))
     bins = np.add.accumulate(probs)
     inds = values[np.digitize(random_sample(n), bins)]
-    samples = []
-    for i in inds:
-        samples.append(deepcopy(choices[int(i)]))
-    return samples
+    return inds
 
 class TFHelper(object):
     """ TFHelper Provides functionality to convert poses between various
@@ -70,7 +65,7 @@ class TFHelper(object):
 
     def angle_normalize(self, z):
         """ convenience function to map an angle to the range [-pi,pi] """
-        return math.atan2(math.sin(z), math.cos(z))
+        return ( z + np.pi ) % (2 * np.pi ) - np.pi
 
     def angle_diff(self, a, b):
         """ Calculates the difference between angle a and angle b (both should
