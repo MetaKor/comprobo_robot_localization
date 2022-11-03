@@ -12,7 +12,7 @@ This allows for a robot operating in a known environment to accurately locate it
 
 ### Solving the Problem
 
-To solve the problem, we implemented a particle filter algorithm. (explain)
+To solve the problem, we implemented a particle filter algorithm. We gave the algorithm an initial estimate of the robot location in a known map to start. From there, the algorithm scattered a set of "particles", hypothetical robot locations with x, y, and orientation values. Every time the algorithm ran, it would simulate a laser scan from the position and orientation of each of these particles, and compare those results to the results of the actual laser scan from the robot. It would then assign each particle a "weight" based on that comparison, with a higher weight indicating a closer comparison, and therefore a more likely candidate for the actual robot position. A very small difference between the simulated laser scan and the actual would indicate that the location that simulated scan was conducted from was very close to the position the actual scan was conducted from (which is where the robot actually is).
 
 ### Design Decision
 
