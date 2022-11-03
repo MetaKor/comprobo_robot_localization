@@ -40,5 +40,5 @@ From a more robotics-specific perspective, visualizations were and continue to b
 
 ### Filter in (Struggling) Action
 
-The neato, having gotten the object locations slightly wrong, stops just short of the ball:
+The particle filter runs, converging rapidly and getting stuck on one point, even when the guess for location isn't possible.
 ![particle filter](https://github.com/MetaKor/comprobo_robot_localization/blob/main/filter_running.gif)
