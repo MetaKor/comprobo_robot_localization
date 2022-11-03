@@ -37,3 +37,8 @@ Another useful improvement we could make would be actively intervening when a pa
 The main procedural lesson learned from this project would be to start earlier, and get the foundations working as soon as possible. We got a bit of a late start, and it took us a while to get the visualization of anything working, which left us with little time to get the particle filter working and tuned.
 
 From a more robotics-specific perspective, visualizations were and continue to be key. Representing the weight of particles in rviz somehow could have made debugging the weighting algorithm much easier. On a related note, testing our subcomponents in as simple a setting as possible (for example, having one particle) would have made it massively easier to debug them.
+
+### Filter in (Struggling) Action
+
+The neato, having gotten the object locations slightly wrong, stops just short of the ball:
+![particle filter](https://github.com/MetaKor/comprobo_robot_localization/blob/main/filter_running.gif)
