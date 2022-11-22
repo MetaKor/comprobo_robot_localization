@@ -105,18 +105,18 @@ class ParticleCloud(object):
         self.unwrap_angles()
 
 
-    def points_at_dist_deg(self, distance, angle):
+    def points_at_dist_ang(self, distance, angle):
         """
         Returns the points that are (distances) away at (angle) in the frame of each particle
         args:
             distance: float, m, how far ahead to go to get each point
-            angle: float, deg, at what angle (in robot frames) to get each point
+            angle: float, rad, at what angle (in robot frames) to get each point
         returns:
             (X_coords, Y_coords): tuple (1xN array, 1xN array), (m, m), the coordinates of the points
         """
-        angles_global = self.Theta + np.radians(angle)
-        X_coords = self.X + distance * np.cos(angles_global)
-        Y_coords = self.Y + distance * np.sin(angles_global)
+        angles_global = self.Theta + angle
+        X_coords = self.X + (distance * np.cos(angles_global))
+        Y_coords = self.Y + (distance * np.sin(angles_global))
         return (X_coords, Y_coords)
 
 
@@ -162,17 +162,17 @@ class ParticleFilter(Node):
         self.odom_frame = "odom"             # name of the odometry coordinate frame
         self.scan_topic = "scan"             # topic where we will get laser scans from 
 
-        self.n_particles = 10            # the number of particles to use
+        self.n_particles = 1000            # the number of particles to use
 
         self.d_thresh = 0.1              # [m] amount of linear movement before performing an update
         self.a_thresh = np.pi/8          # [rad] amount of angular movement before performing an update
 
-        self.init_x_dev = 0.3            # [m] standard deviation of x position of particles in initial cloud
-        self.init_y_dev = 0.3            # [m] standard deviation of x position of particles in initial cloud
-        self.init_theta_dev = 0.5        # [rad] standard deviation of orientation of particles in initial cloud
+        self.init_x_dev = 0.4            # [m] standard deviation of x position of particles in initial cloud
+        self.init_y_dev = 0.4            # [m] standard deviation of x position of particles in initial cloud
+        self.init_theta_dev = 0.6        # [rad] standard deviation of orientation of particles in initial cloud
 
         self.scan_error_threshold = 0.1  # [m] The maximum unpenalized distance error
-        self.scan_resolution = 1         # Process one scan per every this many scans
+        self.scan_resolution = 5         # Process one scan per every this many scans
 
 
         # pose_listener responds to selection of a new approximate robot location (for instance using rviz)
@@ -328,37 +328,44 @@ class ParticleFilter(Node):
 
     def update_particle_weights_with_laser(self, r, theta):
         """ Updates the particle weights in response to the scan data
-            r: the distance readings to obstacles
-            theta: the angle relative to the robot frame for each corresponding reading 
+            r [m]: the distance readings to obstacles
+            theta [rad]: the angle relative to the robot frame for each corresponding reading 
         """
 
-        particle_likelihoods = np.ones(self.n_particles)
+        particle_deviations = np.zeros(self.n_particles) + 0.01
 
-        thresh = self.scan_error_threshold
-
-        for num_scan in range(0, len(theta), self.scan_resolution):
+        for num_scan in range(0, len(theta)-1, self.scan_resolution):
             # Get distance and angle from actual measured scan
             scan_ang = theta[ int(num_scan) ]
             scan_dist = r[ int(num_scan) ]
 
             # Project scan in particle frame and find dist to nearest obstacle
-            (proj_X, proj_Y) = self.particles.points_at_dist_deg(scan_dist, scan_ang)
+            (proj_X, proj_Y) = self.particles.points_at_dist_ang(scan_dist, scan_ang)
+
             min_obstacle_dists = OccupancyField.get_closest_obstacle_distance(self.occupancy_field, proj_X, proj_Y)
-            errors = min_obstacle_dists
+            #print(scan_ang)
+            #print(f"projected X: {proj_X}     proj Y: {proj_Y}")
+            #print(f"scan dist: {scan_dist}    obstacle_dist: {min_obstacle_dists}")
+
 
             # Replace any NaNs with a constant distance replacement of our choosing
-            errors = np.nan_to_num(errors, nan=2.0)
+            errors = np.nan_to_num(min_obstacle_dists, nan=2.0)
 
+            # Sum up the squared errors across each particle 
+            particle_deviations += errors**2
+
+
+            """
             # The likelihood of this scan per particle is piecewise approxmimated as a Gaussian as follows:
             #    > 1.0 if the error was within the threshold
             #    > Proportional to 1/(error^3) if error beyond threshold, but we must must shift
             #        the input by (1-thresh so output is exactly 1.0 when error=thresh
+
             scan_likelihoods = (errors <= thresh) * 1.0 \
                              + (errors > thresh)  * ( (errors + (1.0-thresh)) ** (-3) )
+            """
 
-            particle_likelihoods *= scan_likelihoods
-
-        self.particles.W = particle_likelihoods
+        self.particles.W = particle_deviations**(-3)
         self.particles.normalize()
 
 
@@ -372,9 +379,9 @@ class ParticleFilter(Node):
             [guessed_x, guessed_y, guessed_theta] = self.particles.get_mode_particle()
 
             guessed_theta = self.transform_helper.angle_normalize( guessed_theta )
-            
+
             print(f"guessed x: {guessed_x}     y: {guessed_y}     theta: {guessed_theta}")
-            
+
             # Get position tuple and orientation quaternion tuple from guessed x,y,theta
             guessed_pos = (guessed_x, guessed_y, 0.0)
             guessed_rot = quaternion_from_euler(0.0, 0.0, guessed_theta)
@@ -391,11 +398,7 @@ class ParticleFilter(Node):
             particle is selected in the resampling step.  You may want to make use of the given helper
             function draw_random_sample in helper_functions.py.
         """
-        print(self.particles.W)
         resampled_indices = draw_integer_sample( self.particles.W, self.n_particles)
-
-        print(resampled_indices)
-        print(len(resampled_indices))
 
         self.particles.X     = np.array([ self.particles.X[i] for i in resampled_indices])
         self.particles.Y     = np.array([ self.particles.Y[i] for i in resampled_indices])
